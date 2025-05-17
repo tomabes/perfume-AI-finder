@@ -4,7 +4,6 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Con
 from anthropic import Anthropic
 from dotenv import load_dotenv
 
-# Импорт утилит
 from ga_utils import load_perfume_base
 from prompt_templates import make_claude_prompt
 
@@ -19,7 +18,7 @@ BASE = load_perfume_base()
 # Создание клиента Claude
 claude = Anthropic(api_key=ANTHROPIC_API_KEY)
 
-# Контекст пользователя
+# Контекст пользователей (user_id -> список сообщений)
 user_context = {}
 
 # Обработка команды /start
@@ -28,37 +27,55 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Привет! Я парфюмерный консультант Золотого Яблока. Спрашивайте про парфюмерию — проконсультирую и помогу выбрать ваш аромат."
     )
 
-# Обработка текстовых сообщений
+# Обработка сообщений
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    user_input = update.message.text
+    user_input = update.message.text.strip()
 
+    # Инициализация истории, если нет
+    if user_id not in user_context:
+        user_context[user_id] = []
+
+    # Добавляем сообщение пользователя в историю
     prompt = make_claude_prompt(user_input)
+    user_context[user_id].append({"role": "user", "content": prompt})
+    user_context[user_id] = user_context[user_id][-10:]
+
+    # Первый запрос — без базы
     response = claude.messages.create(
         model="claude-3-7-sonnet-20250219",
         max_tokens=1024,
         temperature=0.7,
         system="Ты профессиональный парфюмерный ассистент.",
-        messages=[{"role": "user", "content": prompt}]
+        messages=user_context[user_id]
     )
 
     reply = response.content[0].text
+    user_context[user_id].append({"role": "assistant", "content": reply})
+    user_context[user_id] = user_context[user_id][-10:]
 
+    # Проверка на необходимость отправки базы
     if "ЗАГРУЖАЮ БАЗУ АРОМАТОВ" in reply:
         base_text = str(BASE)[:100000]
-        full_prompt = make_claude_prompt(user_input, context=base_text)
+        base_prompt = make_claude_prompt(user_input, context=base_text)
+        user_context[user_id].append({"role": "user", "content": base_prompt})
+        user_context[user_id] = user_context[user_id][-10:]
+
         full_response = claude.messages.create(
             model="claude-3-7-sonnet-20250219",
             max_tokens=1024,
             temperature=0.7,
             system="Ты профессиональный парфюмерный ассистент.",
-            messages=[{"role": "user", "content": full_prompt}]
+            messages=user_context[user_id]
         )
+
         reply = full_response.content[0].text
+        user_context[user_id].append({"role": "assistant", "content": reply})
+        user_context[user_id] = user_context[user_id][-10:]
 
     await update.message.reply_text(reply)
 
-# Запуск бота
+# Запуск
 def main():
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
