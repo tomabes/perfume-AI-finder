@@ -21,6 +21,18 @@ claude = Anthropic(api_key=ANTHROPIC_API_KEY)
 # Контекст пользователей
 user_context = {}
 
+SYSTEM_PROMPT = (
+    "Ты — профессиональный парфюмерный ассистент Золотого Яблока. "
+    "Всегда соблюдай следующие правила:\n"
+    "1. Не используй форматирование: никаких жирных шрифтов, заголовков, разделителей и кавычек.\n"
+    "2. Разрешено использовать до 3 эмодзи, чтобы оживить ответ, но не больше.\n"
+    "3. Если пользователь задаёт общий вопрос о парфюмерии, "
+    "отвечай кратко, по делу, без воды — не больше 900 знаков.\n"
+    "4. Если пользователь просит подобрать парфюм, выбирай строго 2–3 аромата из базы. "
+    "Опиши их живо и с интересом.\n"
+    "5. Если пользователь спрашивает не по теме парфюмерии, вежливо направь разговор в сторону парфюма."
+)
+
 # Команда /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -57,7 +69,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         model="claude-3-7-sonnet-20250219",
         max_tokens=1024,
         temperature=0.7,
-        system="Ты профессиональный парфюмерный ассистент.",
+        system=SYSTEM_PROMPT,
         messages=user_context[user_id]["messages"]
     )
     reply = response.content[0].text
@@ -79,7 +91,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             model="claude-3-7-sonnet-20250219",
             max_tokens=1024,
             temperature=0.7,
-            system="Ты профессиональный парфюмерный ассистент.",
+            system=SYSTEM_PROMPT,
             messages=user_context[user_id]["messages"]
         )
         reply = full_response.content[0].text
