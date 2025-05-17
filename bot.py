@@ -18,60 +18,73 @@ BASE = load_perfume_base()
 # Создание клиента Claude
 claude = Anthropic(api_key=ANTHROPIC_API_KEY)
 
-# Контекст пользователей (user_id -> список сообщений)
+# Контекст пользователей
 user_context = {}
 
-# Обработка команды /start
+# Команда /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Привет! Я парфюмерный консультант Золотого Яблока. Спрашивайте про парфюмерию — проконсультирую и помогу выбрать ваш аромат."
     )
 
-# Обработка сообщений
+# Обработка текстовых сообщений
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_input = update.message.text.strip()
 
-    # Инициализация истории, если нет
+    # Инициализация контекста
     if user_id not in user_context:
-        user_context[user_id] = []
+        user_context[user_id] = {
+            "messages": [],
+            "base_loaded": False
+        }
 
-    # Добавляем сообщение пользователя в историю
-    prompt = make_claude_prompt(user_input)
-    user_context[user_id].append({"role": "user", "content": prompt})
-    user_context[user_id] = user_context[user_id][-10:]
+    base_loaded = user_context[user_id]["base_loaded"]
 
-    # Первый запрос — без базы
+    # Генерация промпта с учётом статуса
+    prompt = make_claude_prompt(
+        user_input,
+        context=str(BASE)[:100000] if base_loaded else None,
+        base_loaded=base_loaded
+    )
+
+    # Добавление запроса
+    user_context[user_id]["messages"].append({"role": "user", "content": prompt})
+    user_context[user_id]["messages"] = user_context[user_id]["messages"][-10:]
+
+    # Отправка Claude
     response = claude.messages.create(
         model="claude-3-7-sonnet-20250219",
         max_tokens=1024,
         temperature=0.7,
         system="Ты профессиональный парфюмерный ассистент.",
-        messages=user_context[user_id]
+        messages=user_context[user_id]["messages"]
     )
-
     reply = response.content[0].text
-    user_context[user_id].append({"role": "assistant", "content": reply})
-    user_context[user_id] = user_context[user_id][-10:]
+    user_context[user_id]["messages"].append({"role": "assistant", "content": reply})
+    user_context[user_id]["messages"] = user_context[user_id]["messages"][-10:]
 
-    # Проверка на необходимость отправки базы
+    # Проверка на запрос базы
     if "ЗАГРУЖАЮ БАЗУ АРОМАТОВ" in reply:
-        base_text = str(BASE)[:100000]
-        base_prompt = make_claude_prompt(user_input, context=base_text)
-        user_context[user_id].append({"role": "user", "content": base_prompt})
-        user_context[user_id] = user_context[user_id][-10:]
+        user_context[user_id]["base_loaded"] = True  # 💡 вот здесь флаг
+        base_prompt = make_claude_prompt(
+            user_input,
+            context=str(BASE)[:100000],
+            base_loaded=True
+        )
+        user_context[user_id]["messages"].append({"role": "user", "content": base_prompt})
+        user_context[user_id]["messages"] = user_context[user_id]["messages"][-10:]
 
         full_response = claude.messages.create(
             model="claude-3-7-sonnet-20250219",
             max_tokens=1024,
             temperature=0.7,
             system="Ты профессиональный парфюмерный ассистент.",
-            messages=user_context[user_id]
+            messages=user_context[user_id]["messages"]
         )
-
         reply = full_response.content[0].text
-        user_context[user_id].append({"role": "assistant", "content": reply})
-        user_context[user_id] = user_context[user_id][-10:]
+        user_context[user_id]["messages"].append({"role": "assistant", "content": reply})
+        user_context[user_id]["messages"] = user_context[user_id]["messages"][-10:]
 
     await update.message.reply_text(reply)
 
