@@ -48,7 +48,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         base_text = str(BASE)[:100000]
         full_prompt = make_claude_prompt(user_input, context=base_text)
         full_response = claude.messages.create(
-            model="claude-3-sonnet-20240229",
+            model="claude-3-7-sonnet-20250219",
             max_tokens=1024,
             temperature=0.7,
             system="Ты профессиональный парфюмерный ассистент.",
