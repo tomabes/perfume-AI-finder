@@ -1,25 +1,34 @@
 import os
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 from anthropic import Anthropic
 from dotenv import load_dotenv
+
+# Импорт утилит
 from ga_utils import load_perfume_base
 from prompt_templates import make_claude_prompt
 
+# Загрузка переменных окружения
 load_dotenv()
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+
+# Загрузка базы парфюмов
 BASE = load_perfume_base()
 
+# Создание клиента Claude
 claude = Anthropic(api_key=ANTHROPIC_API_KEY)
 
+# Контекст пользователя
 user_context = {}
 
+# Обработка команды /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Привет! Я парфюмерный консультант Золотого Яблока. Спрашивайте про парфюмерию — проконсультирую и помогу выбрать ваш аромат."
     )
 
+# Обработка текстовых сообщений
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_input = update.message.text
@@ -27,8 +36,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     prompt = make_claude_prompt(user_input)
     response = claude.messages.create(
         model="claude-3-7-sonnet-20250219",
-        max_tokens=20000,
-        temperature=0.8,
+        max_tokens=1024,
+        temperature=0.7,
         system="Ты профессиональный парфюмерный ассистент.",
         messages=[{"role": "user", "content": prompt}]
     )
@@ -36,7 +45,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply = response.content[0].text
 
     if "ЗАГРУЖАЮ БАЗУ АРОМАТОВ" in reply:
-        base_text = str(BASE)[:100000]  # обрежем если очень большая
+        base_text = str(BASE)[:100000]
         full_prompt = make_claude_prompt(user_input, context=base_text)
         full_response = claude.messages.create(
             model="claude-3-sonnet-20240229",
@@ -49,6 +58,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(reply)
 
+# Запуск бота
 def main():
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
