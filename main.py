@@ -27,8 +27,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     prompt = make_claude_prompt(user_input)
     response = claude.messages.create(
         model="claude-3-7-sonnet-20250219",
-        max_tokens=1024,
-        temperature=0.7,
+        max_tokens=20000,
+        temperature=0.8,
         system="Ты профессиональный парфюмерный ассистент.",
         messages=[{"role": "user", "content": prompt}]
     )
