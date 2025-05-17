@@ -7,7 +7,7 @@ from ga_utils import load_perfume_base
 from prompt_templates import make_claude_prompt
 
 load_dotenv()
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 BASE = load_perfume_base()
 
