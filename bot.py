@@ -17,6 +17,16 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 BASE = load_perfume_base()
 BASE_JSON = json.dumps(BASE, ensure_ascii=False)
 
+# Keep database message constant to avoid losing it when cleaning chat history
+BASE_MESSAGE = {
+    "role": "user",
+    "content": (
+        "Here is the Golden Apple database.\n"
+        "DATABASE:\n"
+        f"{BASE_JSON}"
+    )
+}
+
 # Claude client creation
 claude = Anthropic(api_key=ANTHROPIC_API_KEY)
 
@@ -26,14 +36,15 @@ user_context = {}
 SYSTEM_PROMPT = (
     "You are a professional perfume assistant of Golden Apple."
     "Always follow the rules below:\n"
-    "1. Do not use formatting: no bold text, headings, separators, or quotation marks.\n"
+    "1. Do not use formatting: NO bold text, headings, separators, or quotation marks.\n"
     "2. You may use up to 3 emojis to liven up the response, but no more.\n"
     "3. If the user asks a general question about perfumery, "
     "answer briefly and to the point, without fluff — no more than 900 characters.\n"
     "4. If the user asks to select a perfume, choose strictly 2–3 fragrances from the Golden Apple database. "
     "Describe them vividly and engagingly.\n"
-    "5. If the user asks a question unrelated to perfumery, politely steer the conversation back toward perfume.\n"
-    "6. Reply in the language that user used."
+    "5. If the user asks a question unrelated to perfumery, politely steer the conversation back toward perfume in a creative way advising perfumes for such unusual situation.\n"
+    "6. Reply in the language that user used.\n"
+    "7. Never recommend any perfume outside the Golden Apple database uploaded."
 )
 
 def ensure_user(user_id: int):
@@ -48,13 +59,13 @@ def inject_base_once(user_id: int):
     if user_context[user_id]["base_injected"]:
         return
 
-    base_msg = (
-        "Here is the Golden Apple database.\n"
-        "DATABASE:\n"
-        f"{BASE_JSON}"
-    )
-    user_context[user_id]["messages"].append({"role": "user", "content": base_msg})
+    # prepend BASE_MESSAGE
     user_context[user_id]["base_injected"] = True
+
+# include the base first in message list
+def build_messages_for_claude(user_id: int, max_tail: int = 12):
+    tail = user_context[user_id]["messages"][-max_tail:]
+    return [BASE_MESSAGE] + tail
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -88,7 +99,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Adding message
     user_context[user_id]["messages"].append({"role": "user", "content": prompt})
-    user_context[user_id]["messages"] = user_context[user_id]["messages"][-10:]
+    user_context[user_id]["messages"] = user_context[user_id]["messages"][-12:]
 
     # Contact Claude
     response = claude.messages.create(
@@ -96,11 +107,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         max_tokens=1024,
         temperature=0.7,
         system=SYSTEM_PROMPT,
-        messages=user_context[user_id]["messages"]
+        # Always include database first, clean only tail history
+        messages=build_messages_for_claude(user_id, max_tail=12)
     )
     reply = response.content[0].text
     user_context[user_id]["messages"].append({"role": "assistant", "content": reply})
-    user_context[user_id]["messages"] = user_context[user_id]["messages"][-10:]
+    user_context[user_id]["messages"] = user_context[user_id]["messages"][-12:]
 
     await update.message.reply_text(reply)
 
