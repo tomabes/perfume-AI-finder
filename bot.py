@@ -1,5 +1,6 @@
 import os
-from telegram import Update
+import json
+from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 from anthropic import Anthropic
 from dotenv import load_dotenv
@@ -14,6 +15,7 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
 # Downlod parfume base
 BASE = load_perfume_base()
+BASE_JSON = json.dumps(BASE, ensure_ascii=False)
 
 # Claude client creation
 claude = Anthropic(api_key=ANTHROPIC_API_KEY)
@@ -28,37 +30,64 @@ SYSTEM_PROMPT = (
     "2. You may use up to 3 emojis to liven up the response, but no more.\n"
     "3. If the user asks a general question about perfumery, "
     "answer briefly and to the point, without fluff — no more than 900 characters.\n"
-    "4. If the user asks to select a perfume, choose strictly 2–3 fragrances from the database. "
+    "4. If the user asks to select a perfume, choose strictly 2–3 fragrances from the Golden Apple database. "
     "Describe them vividly and engagingly.\n"
     "5. If the user asks a question unrelated to perfumery, politely steer the conversation back toward perfume.\n"
     "6. Reply in the language that user used."
 )
 
-# Command /start
+def ensure_user(user_id: int):
+    if user_id not in user_context:
+        user_context[user_id] = {
+            "messages": [],
+            "base_injected": False,
+        }
+
+# Add base for a user
+def inject_base_once(user_id: int):
+    if user_context[user_id]["base_injected"]:
+        return
+
+    base_msg = (
+        "Here is the Golden Apple database.\n"
+        "DATABASE:\n"
+        f"{BASE_JSON}"
+    )
+    user_context[user_id]["messages"].append({"role": "user", "content": base_msg})
+    user_context[user_id]["base_injected"] = True
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    ensure_user(user_id)
+
+    # Base injection when /start
+    inject_base_once(user_id)
+
+    # Button /start
+    kb = ReplyKeyboardMarkup([["/start"]], resize_keyboard=True)
+
     await update.message.reply_text(
-        "Hi! I’m a perfume consultant at Golden Apple. Feel free to ask about perfumery — I’ll advise you and help you choose your fragrance."
+        "Hi! I’m a perfume consultant at Golden Apple. Feel free to ask about perfumery — I’ll advise you and help you choose your fragrance.",
+        reply_markup=kb
     )
 
 # Text messages processing
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    user_input = update.message.text.strip()
+    ensure_user(user_id)
 
-    # Context initialize
-    if user_id not in user_context:
-        user_context[user_id] = {
-            "messages": [],
-            "base_loaded": False
-        }
+    user_input = (update.message.text or "").strip()
+    if not user_input:
+        return
 
-    base_loaded = user_context[user_id]["base_loaded"]
+    # if user doesn't use /start
+    inject_base_once(user_id)
 
     # Prompt generation
     prompt = make_claude_prompt(
         user_input,
-        context=str(BASE)[:100000] if base_loaded else None,
-        base_loaded=base_loaded
+        context=None,
+        base_loaded=True
     )
 
     # Adding message
@@ -77,33 +106,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_context[user_id]["messages"].append({"role": "assistant", "content": reply})
     user_context[user_id]["messages"] = user_context[user_id]["messages"][-10:]
 
-    # Check base
-    if "PERFUME BASE DOWNLOADING" in reply:
-        user_context[user_id]["base_loaded"] = True
-        base_prompt = make_claude_prompt(
-            user_input,
-            context=str(BASE)[:100000],
-            base_loaded=True
-        )
-        user_context[user_id]["messages"].append({"role": "user", "content": base_prompt})
-        user_context[user_id]["messages"] = user_context[user_id]["messages"][-10:]
-
-        full_response = claude.messages.create(
-            model="claude-3-7-sonnet-20250219",
-            max_tokens=1024,
-            temperature=0.7,
-            system=SYSTEM_PROMPT,
-            messages=user_context[user_id]["messages"]
-        )
-        reply = full_response.content[0].text
-        user_context[user_id]["messages"].append({"role": "assistant", "content": reply})
-        user_context[user_id]["messages"] = user_context[user_id]["messages"][-10:]
-
     await update.message.reply_text(reply)
+
+async def post_init(app):
+    await app.bot.set_my_commands([
+        ("start", "Start the perfume assistant"),
+    ])
 
 # Launch
 def main():
-    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).post_init(post_init).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.run_polling()
