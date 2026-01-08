@@ -84,11 +84,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     inject_base_once(user_id)
 
     # Prompt generation
-    prompt = make_claude_prompt(
-        user_input,
-        context=None,
-        base_loaded=True
-    )
+    prompt = make_claude_prompt(user_input)
 
     # Adding message
     user_context[user_id]["messages"].append({"role": "user", "content": prompt})
